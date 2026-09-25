@@ -1,81 +1,101 @@
 # Restaurant Recommendation System
 
-End-to-end multimodal AI restaurant recommendation system. Unstructured restaurant text and food images are turned into a structured, retrievable knowledge base, served by a multi-agent recommendation workflow (LangGraph + Groq), and exposed through a FastAPI backend + a plain HTML/CSS/JS frontend. A Gradio prototype and an MCP server/client/host stack are also included.
+An AI-powered restaurant and recipe recommendation platform. It combines a multimodal vector search index (text + food images) with a multi-agent LangGraph workflow to generate personalized dining recommendations from natural-language requests.
 
-## Setup
+## Features
+
+- **Conversational recommendations** — describe what you're craving and get personalized restaurant and recipe suggestions
+- **Multi-agent reasoning** — dedicated agents for trend analysis, cuisine/style matching, and nutrition fit, synthesized into a final recommendation
+- **Multimodal search** — restaurants and recipes are indexed by text embeddings and food image embeddings for cross-modal retrieval
+- **Restaurant management** — add, update, and remove restaurant records through the UI or API
+- **REST API** — a documented set of endpoints for chat and data management, usable from any client
+
+## Tech Stack
+
+- **Backend:** FastAPI, LangGraph, LangChain, Groq (LLM inference)
+- **Retrieval:** ChromaDB, Sentence-Transformers (text), CLIP (images)
+- **Frontend:** HTML, CSS, JavaScript
+- **Data validation:** Pydantic
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11
+- A [Groq API key](https://console.groq.com)
+
+### Installation
 
 ```bash
-py -3.11 -m venv .venv
+python -m venv .venv
 .venv/Scripts/pip install -e .
 .venv/Scripts/pip install -r requirements.txt
-cp .env.example .env   # then fill in GROQ_API_KEY
+cp .env.example .env
 ```
 
-## Verify the environment
+Add your `GROQ_API_KEY` to `.env`.
+
+### Running the app
+
+Build the vector search index (one-time, or whenever the dataset changes):
 
 ```bash
-.venv/Scripts/pytest tests/unit/test_environment.py -v
+.venv/Scripts/python -m retrieval.index_builder
 ```
 
-## Layout
-
-```text
-data/          raw + generated datasets, per pipeline stage
-src/           application code (data, schemas, llm, retrieval, agents, chatbot, api, mcp_app)
-frontend/      plain HTML/CSS/JS client for the FastAPI backend
-tests/         unit + integration tests
-chroma_data/   persistent vector store (generated, gitignored — built by a setup step, see below)
-Procfile       process type for platforms that read one (Render/Railway/Heroku-style)
-runtime.txt    pins the Python version for platforms that read one
-```
-
-## Running the deployable app (backend + frontend)
-
-The FastAPI backend serves both the REST API and the static frontend from one process — no Docker,
-just plain Python. On Windows, `run.bat` does all of this for you.
+Start the server:
 
 ```bash
-.venv/Scripts/pip install -e .
-.venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python -m retrieval.index_builder   # builds chroma_data/ from data/ (one-time, or after editing data/)
 .venv/Scripts/uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000 — the Chat tab talks to `/api/chat`, and Manage Restaurants talks to
-`/api/restaurants`. See `src/api/main.py` for the full route list (`/api/health`,
-`/api/sample-prompts`, `/api/chat`, `/api/restaurants` CRUD, `/api/recipes`).
+On Windows, `run.bat` does both steps for you.
 
-### Deploying (no Docker)
+Open **http://localhost:8000** in a browser.
 
-This is a plain Python web service — any host that runs a Python app from a git repo works
-(Render's native Python runtime, Railway, PythonAnywhere, a bare VM, etc.). `chroma_data/` is
-gitignored (regenerable binary store), so it needs to be built once as part of your deploy's build
-step, not assumed to already be on disk:
+## Project Structure
 
-- **Build command:** `pip install -e . && pip install -r requirements.txt && python -m retrieval.index_builder`
-- **Start command:** `uvicorn api.main:app --host 0.0.0.0 --port $PORT` (also in [`Procfile`](Procfile)
-  for platforms that read one)
-- **Environment variable:** `GROQ_API_KEY` (copy from your `.env`)
-- **Python version:** 3.11 (pinned in [`runtime.txt`](runtime.txt) for platforms that read one — the
-  ML stack here, torch/sentence-transformers/CLIP/chromadb, is not yet reliable on 3.14)
+```text
+src/
+  api/          FastAPI application and routes
+  agents/       LangGraph multi-agent recommendation workflow
+  chatbot/      conversational logic shared by the API and a Gradio prototype
+  data/         dataset management and CLI
+  llm/          Groq client and prompt templates
+  mcp_app/      MCP server/client/host implementation
+  retrieval/    embeddings, vector index, similarity search
+  schemas/      Pydantic data models
+frontend/       web client (HTML/CSS/JS)
+data/           restaurant, recipe, and review datasets
+tests/          unit and integration tests
+```
 
-Re-run the `index_builder` step (or trigger a redeploy) any time `data/structured/restaurants.json`
-or `data/recipes/recipes.json` change, since the vector index isn't rebuilt automatically from
-API-driven CRUD edits.
+## API Reference
 
-### Notes on reliability
+| Method | Endpoint                  | Description                       |
+|--------|----------------------------|------------------------------------|
+| GET    | `/api/health`              | Health check                      |
+| GET    | `/api/sample-prompts`      | Example chat prompts              |
+| POST   | `/api/chat`                | Send a message, get a recommendation |
+| GET    | `/api/restaurants`         | List restaurants                  |
+| GET    | `/api/restaurants/{id}`    | Get a restaurant                  |
+| POST   | `/api/restaurants`         | Add a restaurant                  |
+| PUT    | `/api/restaurants/{id}`    | Update a restaurant               |
+| DELETE | `/api/restaurants/{id}`    | Remove a restaurant               |
+| GET    | `/api/recipes`             | List recipes                      |
 
-The recommendation workflow makes several Groq calls per chat message (intent classification,
-preference extraction, profile generation, then 3 parallel agent analyses + synthesis). On a
-free-tier Groq account this can hit per-minute rate limits under heavy use — `src/llm/groq_client.py`
-caps concurrent in-flight calls and retries once on an empty completion (a known behavior of
-reasoning models under a tight token budget) to keep this from surfacing as a silent failure, but a
-paid/higher-limit Groq tier will make chat responses noticeably faster and more consistent.
+## Deployment
 
-## Other entry points
+The app is a standard Python web service and runs anywhere that can install dependencies and run a process from an entry point:
 
-- `.venv/Scripts/python -m src.chatbot.app` — the original Gradio prototype (same `chatbot.service`
-  logic as the API, different UI).
-- `.venv/Scripts/python -m src.mcp_app.server` / `.mcp_app.client` / `.mcp_app.host_app` — an
-  MCP server/client/host stack.
-- `.venv/Scripts/python -m src.data.cli` — terminal CRUD for the restaurant dataset.
+- **Build:** `pip install -e . && pip install -r requirements.txt && python -m retrieval.index_builder`
+- **Start:** `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
+- **Environment:** `GROQ_API_KEY`
+
+A `Procfile` and `runtime.txt` are included for platforms that read them.
+
+## Testing
+
+```bash
+.venv/Scripts/pytest tests/ -v
+```
