@@ -1,4 +1,4 @@
-# Restaurant Recommendation Capstone
+# Restaurant Recommendation System
 
 End-to-end multimodal AI restaurant recommendation system. Unstructured restaurant text and food images are turned into a structured, retrievable knowledge base, served by a multi-agent recommendation workflow (LangGraph + Groq), and exposed through a FastAPI backend + a plain HTML/CSS/JS frontend. A Gradio prototype and an MCP server/client/host stack are also included.
 
